@@ -4,7 +4,7 @@
     "ollama": {
       "name": "Ollama (LAN)",
       "options": { "baseURL": "http://OLLAMA_HOST:OLLAMA_PORT/v1", "apiKey": "ollama" },
-      "models": { "MODEL_ID": {} }
+      "models": { "MODEL_ID": { "limit": { "context": 65536, "output": 8192 } } }
     }
   }
 }

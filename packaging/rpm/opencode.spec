@@ -8,11 +8,13 @@ Summary:        opencode AI coding agent (air-gapped build)
 License:        MIT
 URL:            https://opencode.ai
 BuildArch:      x86_64
+Requires:       fontconfig
 
 %description
 Air-gapped opencode for RHEL 8/9. Bundles a glibc baseline binary, ripgrep,
-and a LAN-Ollama default configuration. Performs no network access at
-install time or runtime except to the configured Ollama endpoint.
+a bundled Nerd Font (so the TUI's icon glyphs render in any terminal), and a
+LAN-Ollama default configuration. Performs no network access at install time
+or runtime except to the configured Ollama endpoint.
 
 %install
 rm -rf %{buildroot}
@@ -30,6 +32,8 @@ install -m 0644 %{_sourcedir}/config/ollama.conf  %{buildroot}/etc/opencode/olla
 /opt/opencode/libexec/oc-rebuild-config
 /opt/opencode/bin/rg
 /usr/bin/opencode
+%dir /usr/share/fonts/opencode-nerd
+/usr/share/fonts/opencode-nerd/*.ttf
 %dir /etc/opencode
 %dir /etc/opencode/conf.d
 %config(noreplace) /etc/opencode/conf.d/00-base.json
@@ -37,6 +41,8 @@ install -m 0644 %{_sourcedir}/config/ollama.conf  %{buildroot}/etc/opencode/olla
 
 %post
 /opt/opencode/libexec/oc-rebuild-config /etc/opencode/conf.d /etc/opencode/ollama.conf /etc/opencode/opencode.json || :
+fc-cache -f /usr/share/fonts/opencode-nerd >/dev/null 2>&1 || :
 
 %postun
 if [ "$1" = 0 ]; then rm -f /etc/opencode/opencode.json; fi
+fc-cache -f >/dev/null 2>&1 || :

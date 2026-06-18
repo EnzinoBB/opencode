@@ -25,8 +25,9 @@ This runs the full pipeline in order:
 1. `build-binary.sh` — bundles the opencode CLI binary
 2. `build-tools.sh` — compiles the `oc-rebuild-config` config-merge tool
 3. `vendor-ripgrep.sh` — downloads and stages the ripgrep binary
-4. `vendor-pylsp.sh` — vendors python-lsp-server as a pure-Python `site/` tree (no node)
-5. `build-rpm.sh` — runs `rpmbuild` inside a UBI9 container, producing both RPMs
+4. `vendor-font.sh` — downloads and stages a Nerd Font (DejaVuSansMono Nerd Font, Mono)
+5. `vendor-pylsp.sh` — vendors python-lsp-server as a pure-Python `site/` tree (no node)
+6. `build-rpm.sh` — runs `rpmbuild` inside a UBI9 container, producing both RPMs
 
 Artifacts land in `packaging/rpm/out/`:
 
@@ -58,6 +59,15 @@ Edit `/etc/opencode/ollama.conf` (host/port/model), then regenerate the runtime 
 
 The `oc-rebuild-config` helper merges the config fragments in `/etc/opencode/conf.d/`
 with the Ollama endpoint settings and writes `/etc/opencode/opencode.json`.
+
+### Terminal font (TUI icons)
+
+The core RPM bundles **DejaVuSansMono Nerd Font** into `/usr/share/fonts/opencode-nerd/`
+and refreshes the font cache in `%post`. opencode's TUI uses Nerd Font icon glyphs; a
+terminal whose font lacks them shows corrupted characters. After install, set your
+terminal's font to **"DejaVuSansM Nerd Font Mono"** once (e.g. xfce4-terminal →
+Preferences → Appearance → uncheck "Use system font" → select it). opencode cannot set
+the terminal's font itself — that is a terminal-emulator preference.
 
 ## Adding a language (future)
 

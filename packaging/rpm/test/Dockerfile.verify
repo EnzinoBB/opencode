@@ -3,7 +3,7 @@ FROM ${BASE}
 # ONLY online step: install python3.9 (the sole runtime dep; simulates the internal
 # mirror). python3.9 is the same package on UBI8 and UBI9. No nodejs: the Python LSP
 # (python-lsp-server) is pure Python.
-RUN dnf -y install python3.9 tar && dnf clean all
+RUN dnf -y install python3.9 tar fontconfig && dnf clean all
 COPY out /rpms
 COPY test/verify-offline.sh /verify.sh
 RUN chmod +x /verify.sh

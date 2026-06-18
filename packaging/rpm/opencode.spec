@@ -17,6 +17,7 @@ install time or runtime except to the configured Ollama endpoint.
 %install
 rm -rf %{buildroot}
 cp -a %{_sourcedir}/payload/opencode/. %{buildroot}/
+install -D -m 0755 %{_sourcedir}/files/opencode.wrapper %{buildroot}/usr/bin/opencode
 install -d %{buildroot}/etc/opencode/conf.d
 install -m 0644 %{_sourcedir}/config/00-base.json %{buildroot}/etc/opencode/conf.d/00-base.json
 install -m 0644 %{_sourcedir}/config/ollama.conf  %{buildroot}/etc/opencode/ollama.conf

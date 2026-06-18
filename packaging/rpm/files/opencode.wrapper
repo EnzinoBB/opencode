@@ -1,0 +1,8 @@
+#!/bin/sh
+# opencode air-gapped wrapper: forces offline behavior regardless of user config.
+[ -f /etc/opencode/ollama.conf ] && . /etc/opencode/ollama.conf
+export OPENCODE_DISABLE_LSP_DOWNLOAD=true
+export OPENCODE_DISABLE_AUTOUPDATE=true
+export OPENCODE_DISABLE_MODELS_FETCH=true
+export PATH="/opt/opencode/bin:$PATH"
+exec /opt/opencode/libexec/opencode "$@"

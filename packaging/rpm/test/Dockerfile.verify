@@ -1,0 +1,11 @@
+ARG BASE=registry.access.redhat.com/ubi9/ubi:latest
+FROM ${BASE}
+# ONLY online step: install runtime deps (simulates internal mirror availability)
+# Enable nodejs:18 stream first — required on UBI8 (default may be nodejs 10/14);
+# the module enable is valid on UBI9 too so this Dockerfile works for both bases.
+RUN dnf -y module reset nodejs && dnf -y module enable nodejs:18 && \
+    dnf -y install python3 nodejs tar && dnf clean all
+COPY out /rpms
+COPY test/verify-offline.sh /verify.sh
+RUN chmod +x /verify.sh
+ENTRYPOINT ["/verify.sh"]

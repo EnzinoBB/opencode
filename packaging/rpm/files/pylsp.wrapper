@@ -1,0 +1,9 @@
+#!/bin/sh
+# Launch python-lsp-server (bundled, pure-python) with the best available system python.
+# python-lsp-server needs python >= 3.9; prefer the newest interpreter present.
+SITE=/opt/opencode/lsp/python/site
+for py in python3.13 python3.12 python3.11 python3.10 python3.9 python3; do
+  if command -v "$py" >/dev/null 2>&1; then PYBIN="$py"; break; fi
+done
+[ -n "${PYBIN:-}" ] || { echo "no python3 (>=3.9) found for pylsp" >&2; exit 1; }
+exec env PYTHONPATH="$SITE" "$PYBIN" -m pylsp "$@"

@@ -1,0 +1,8 @@
+{
+  "lsp": {
+    "pyright": {
+      "command": ["/opt/opencode/bin/pyright-langserver", "--stdio"],
+      "extensions": [".py", ".pyi"]
+    }
+  }
+}

@@ -486,7 +486,7 @@ git commit -m "feat(packaging): core opencode RPM with offline wrapper and confi
 
 **Interfaces:**
 - Consumes: core RPM's `/etc/opencode/conf.d` and `oc-rebuild-config`.
-- Produces: `opencode-lsp-python-<pyrightver>-1.<dist>.x86_64.rpm`. Installs pyright under `/opt/opencode/lsp/python`, symlinks `pyright-langserver` into `/opt/opencode/bin`, drops `conf.d/10-python.json`, `Requires: opencode, python3`.
+- Produces: `opencode-lsp-python-<pyrightver>-1.<dist>.x86_64.rpm`. Installs pyright under `/opt/opencode/lsp/python`, symlinks `pyright-langserver` into `/opt/opencode/bin`, drops `conf.d/10-python.json`, `Requires: opencode, nodejs, python3`. NOTE: `pyright-langserver` is a Node.js program (`#!/usr/bin/env node`), so `nodejs` is the hard runtime dependency (resolved from the internal mirror); `python3` lets pyright locate the analyzed Python environment.
 
 - [ ] **Step 1: Write the pyright vendor script**
 
@@ -540,14 +540,16 @@ Summary:        Python LSP (pyright) for air-gapped opencode
 License:        MIT
 BuildArch:      x86_64
 Requires:       opencode
+Requires:       nodejs
 Requires:       python3
 %global __os_install_post %{nil}
 %global debug_package %{nil}
 
 %description
 Bundles pyright (Python language server) for air-gapped opencode and
-registers it via /etc/opencode/conf.d. Requires python3 from the system
-(internal mirror).
+registers it via /etc/opencode/conf.d. pyright-langserver is a Node.js
+program, so nodejs is required; python3 lets pyright locate the analyzed
+Python environment. Both are resolved from the internal mirror.
 
 %install
 rm -rf %{buildroot}
@@ -641,8 +643,8 @@ Create `packaging/rpm/test/Dockerfile.verify`:
 ```dockerfile
 ARG BASE=registry.access.redhat.com/ubi9/ubi:latest
 FROM ${BASE}
-# ONLY online step: install python3 (simulates internal mirror availability)
-RUN dnf -y install python3 tar && dnf clean all
+# ONLY online step: install runtime deps (simulates internal mirror availability)
+RUN dnf -y install python3 nodejs tar && dnf clean all
 COPY out /rpms
 COPY test/verify-offline.sh /verify.sh
 RUN chmod +x /verify.sh

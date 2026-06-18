@@ -159,11 +159,20 @@ Contenuto: binario (glibc baseline), `rg`, wrapper, `oc-rebuild-config`,
 `%post`/`%postun`: esegue `oc-rebuild-config`. Nessuna dipendenza pesante.
 
 ### 9.2 `opencode-lsp-python` — v1 (pilota)
-- pyright pre-installato sotto `/opt/opencode/lsp/python/` (node_modules risolto via
-  `which`/PATH); robotframework-lsp valutato nel pacchetto robot, non qui.
-- `Requires: python3` (dal mirror interno).
-- Installa `conf.d/10-python.json` con la voce `lsp.pyright` (o lascia il built-in con
-  binario su PATH) e triggera il rebuild.
+- **python-lsp-server (pylsp)** bundlato come albero **puro Python** in
+  `/opt/opencode/lsp/python/site/` (nessun `.so`, nessun node). Lanciato dal wrapper
+  `/opt/opencode/bin/pylsp` che sceglie il `python3` migliore (≥3.9) e imposta `PYTHONPATH`.
+- `Requires: python3` **soltanto** (no nodejs). I pacchetti necessari sono **tutti dentro
+  l'RPM** (albero pre-installato a build-time): zero download su target.
+- Installa `conf.d/10-python.json` con la voce LSP custom `lsp.pylsp` (`command:
+  ["/opt/opencode/bin/pylsp"]`, `extensions: [".py",".pyi"]`) e triggera il rebuild.
+
+> **Nota (impl):** scelto **pylsp** al posto di pyright perché le macchine target hanno
+> python3 ma **NON nodejs** (e nessuna rete). pyright è un programma Node → escluso. Le
+> dipendenze compilate opzionali di pylsp (`ujson`, `black`) sono escluse per mantenere
+> l'albero puro-Python e portabile tra le versioni python di RHEL 8/9; le feature LSP core
+> (completion, diagnostica, hover, go-to-def) vengono da **jedi** (puro Python). `ujson` ha
+> fallback a `json` stdlib; `black` (formatter) è opzionale.
 
 ### 9.3 Sub-RPM futuri (post-v1, stesso pattern)
 `opencode-lsp-bash`, `opencode-lsp-web` (html + xml/lemminx),

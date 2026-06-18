@@ -35,16 +35,25 @@ provider lasciando solo gli endpoint utili offline.
 
 ## 3. Architettura del binario
 
-Build di un singolo target **`linux-x64-baseline-musl`**:
+Build di un singolo target **`linux-x64-baseline`** (glibc, no-AVX2):
 
-- **musl statico** → nessuna dipendenza dalla versione di glibc, quindi gira su RHEL 8
-  (glibc 2.28) e RHEL 9 senza distinzioni.
 - **baseline** → nessun requisito AVX2, gira su CPU datate / VM.
+- **glibc** → verificato empiricamente che il binario gira nativamente su **RHEL 8.10
+  (glibc 2.28)** e **RHEL 9.8** senza alcun runtime aggiuntivo. Dipende solo dalle libc
+  standard (`libc.so.6`, `ld-linux`, `libpthread`, `libdl`, `libm`) presenti su ogni RHEL.
 - Un solo artefatto per tutto il parco macchine → un solo RPM core.
 
+> **Nota di revisione (impl):** il design iniziale prevedeva il target `*-musl` per timore
+> di incompatibilità con glibc 2.28 su RHEL 8. Il test sul campo (UBI8/UBI9) ha mostrato che
+> il binario **glibc baseline** funziona direttamente, mentre il binario musl di Bun è
+> *dinamicamente* linkato a `libc.musl`/`libstdc++` musl (assenti su RHEL) e richiederebbe
+> di bundlare ~3.4MB di runtime + invocazione via loader. Si è quindi scelto **glibc
+> baseline**: più semplice, più piccolo, zero indirezioni. Caveat: testato su 8.10/9.8; le
+> minor 8.x più vecchie condividono lo stesso soname glibc 2.28.
+
 Il target esiste già in `packages/opencode/script/build.ts` (`{os:linux, arch:x64,
-abi:"musl", avx2:false}`). La build gira su una **macchina connessa** (CI o dev box):
-Bun scarica gli artefatti di cross-compile in quella fase; l'output è offline-ready.
+avx2:false}`). La build gira su una **macchina connessa** (CI o dev box): Bun scarica gli
+artefatti di cross-compile in quella fase; l'output è offline-ready.
 
 Trade-off accettato: il binario baseline rinuncia alle ottimizzazioni AVX2 → lieve perdita
 di performance su CPU moderne, in cambio di **un solo artefatto universale**.

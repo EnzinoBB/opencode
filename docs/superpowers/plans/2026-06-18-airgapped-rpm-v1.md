@@ -2,16 +2,16 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Produce installable RPMs that run opencode fully offline on RHEL 8/9, with a `linux-x64-baseline-musl` binary, bundled ripgrep, a LAN-Ollama default config, and Python (pyright) as the pilot per-language LSP sub-package.
+**Goal:** Produce installable RPMs that run opencode fully offline on RHEL 8/9, with a `linux-x64-baseline` (glibc, no-AVX2) binary, bundled ripgrep, a LAN-Ollama default config, and Python (pyright) as the pilot per-language LSP sub-package.
 
-**Architecture:** A connected build host compiles a single static `linux-x64-baseline-musl` opencode binary, vendors ripgrep and pyright, and assembles two RPMs — `opencode` (core: binary + rg + wrapper + offline config + a compiled `oc-rebuild-config` merge tool) and `opencode-lsp-python` (pyright + `python3` dependency). At install time a `conf.d/` fragment merge regenerates `/etc/opencode/opencode.json`. A wrapper at `/usr/bin/opencode` forces all offline env flags. Target machines never touch the network.
+**Architecture:** A connected build host compiles a single `linux-x64-baseline` (glibc) opencode binary, vendors ripgrep and pyright, and assembles two RPMs — `opencode` (core: binary + rg + wrapper + offline config + a compiled `oc-rebuild-config` merge tool) and `opencode-lsp-python` (pyright + `python3` dependency). At install time a `conf.d/` fragment merge regenerates `/etc/opencode/opencode.json`. A wrapper at `/usr/bin/opencode` forces all offline env flags. Target machines never touch the network.
 
 **Tech Stack:** Bun (compile + tests), bash (wrapper, build orchestration, RPM scriptlets), `rpmbuild`/`.spec` files, Red Hat UBI8/UBI9 containers for offline verification.
 
 ## Global Constraints
 
-- Target architecture: **x86_64 only**. Binary target: **`opencode-linux-x64-baseline-musl`** (Bun compile target string: `bun-linux-x64-baseline-musl`).
-- Must run on **RHEL 8 (glibc 2.28)** and **RHEL 9** and **CPU without AVX2** — guaranteed by the static musl + baseline build.
+- Target architecture: **x86_64 only**. Binary target: **`opencode-linux-x64-baseline`** (glibc, no-AVX2; Bun compile target string: `bun-linux-x64-baseline`). NOTE: the musl variant was rejected during implementation — Bun's musl binary is dynamically linked to musl `libc`/`libstdc++` (absent on RHEL); the glibc baseline binary was empirically verified to run natively on UBI8 (RHEL 8.10, glibc 2.28) and UBI9 (RHEL 9.8).
+- Must run on **RHEL 8 (glibc 2.28)** and **RHEL 9** and **CPU without AVX2** — the glibc baseline binary depends only on standard glibc libs present on every RHEL; baseline = no AVX2 requirement.
 - **No network access on target** at install-time or runtime. Anything opencode would download must be bundled.
 - ripgrep pinned to **15.1.0** (must match `packages/core/src/ripgrep/binary.ts`), asset `ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz`.
 - Runtime language deps (e.g. `python3`) are declared as RPM `Requires` → resolved from the internal RHEL mirror, never bundled in v1.
@@ -22,7 +22,7 @@
 
 ---
 
-### Task 1: Single-target build filter for `linux-x64-baseline-musl`
+### Task 1: Single-target build filter for `linux-x64-baseline`
 
 **Files:**
 - Modify: `packages/opencode/script/build.ts` (target selection block, ~lines 116-141)
@@ -30,7 +30,7 @@
 
 **Interfaces:**
 - Consumes: existing `allTargets` array in `build.ts`.
-- Produces: `packages/opencode/dist/opencode-linux-x64-baseline-musl/bin/opencode` (static binary). `build-binary.sh` copies it to `packaging/rpm/payload/opencode/opt/opencode/libexec/opencode`.
+- Produces: `packages/opencode/dist/opencode-linux-x64-baseline/bin/opencode` (glibc binary). `build-binary.sh` copies it to `packaging/rpm/payload/opencode/opt/opencode/libexec/opencode`.
 
 - [ ] **Step 1: Add a `--targets=` filter to build.ts**
 
@@ -71,8 +71,8 @@ const targets = targetsFilter
 
 - [ ] **Step 2: Verify the filter selects exactly one target**
 
-Run: `cd packages/opencode && bun run script/build.ts --targets=opencode-linux-x64-baseline-musl --skip-embed-web-ui 2>&1 | grep -E "^building "`
-Expected: a single line `building opencode-linux-x64-baseline-musl` (skip-embed used here only to speed the smoke check; the real build in Step 3 embeds the web UI).
+Run: `export PATH="$HOME/.bun/bin:$PATH" && cd packages/opencode && bun run script/build.ts --targets=opencode-linux-x64-baseline --skip-embed-web-ui 2>&1 | grep -E "^building "`
+Expected: a single line `building opencode-linux-x64-baseline` (skip-embed used here only to speed the smoke check; the real build in Step 3 embeds the web UI).
 
 - [ ] **Step 3: Write the build-binary.sh orchestration script**
 
@@ -85,7 +85,7 @@ set -euo pipefail
 # Must run on a CONNECTED host (Bun downloads cross-compile artifacts here).
 export PATH="$HOME/.bun/bin:$PATH"   # bun is installed here, not on default PATH
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
-TARGET="opencode-linux-x64-baseline-musl"
+TARGET="opencode-linux-x64-baseline"
 cd "$ROOT/packages/opencode"
 bun run script/build.ts --targets="$TARGET"
 BIN="$ROOT/packages/opencode/dist/$TARGET/bin/opencode"
@@ -101,13 +101,13 @@ echo "staged binary -> $DEST/libexec/opencode"
 - [ ] **Step 4: Run the build and confirm the binary runs on the (glibc) build host**
 
 Run: `chmod +x packaging/rpm/scripts/build-binary.sh && ./packaging/rpm/scripts/build-binary.sh`
-Expected: ends with a version line (e.g. `1.17.8`). A static musl binary runs on the glibc CI host, proving portability.
+Expected: ends with a version line. The glibc baseline binary runs directly on this glibc host (and was verified on UBI8/UBI9).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add packages/opencode/script/build.ts packaging/rpm/scripts/build-binary.sh
-git commit -m "feat(packaging): single-target build filter for air-gapped musl binary"
+git commit -m "feat(packaging): single-target build filter for air-gapped glibc baseline binary"
 ```
 
 ---
@@ -251,7 +251,7 @@ ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 DEST="$ROOT/packaging/rpm/payload/opencode/opt/opencode/libexec"
 mkdir -p "$DEST"
 bun build "$ROOT/packaging/rpm/tools/rebuild-config.ts" \
-  --compile --target=bun-linux-x64-baseline-musl \
+  --compile --target=bun-linux-x64-baseline \
   --outfile "$DEST/oc-rebuild-config"
 chmod 0755 "$DEST/oc-rebuild-config"
 echo "staged oc-rebuild-config -> $DEST/oc-rebuild-config"
@@ -396,7 +396,7 @@ Requires:       tar
 %global debug_package %{nil}
 
 %description
-Air-gapped opencode for RHEL 8/9. Bundles a static musl binary, ripgrep,
+Air-gapped opencode for RHEL 8/9. Bundles a glibc baseline binary, ripgrep,
 and a LAN-Ollama default configuration. Performs no network access at
 install time or runtime except to the configured Ollama endpoint.
 
@@ -661,7 +661,7 @@ Run:
 docker build --build-arg BASE=registry.access.redhat.com/ubi8/ubi:latest -f packaging/rpm/test/Dockerfile.verify -t oc-verify:ubi8 packaging/rpm
 docker run --rm --network=none oc-verify:ubi8
 ```
-Expected: `OFFLINE VERIFY OK` (proves the musl binary runs on glibc 2.28).
+Expected: `OFFLINE VERIFY OK` (proves the glibc baseline binary runs on RHEL 8 / glibc 2.28).
 
 - [ ] **Step 6: Commit**
 

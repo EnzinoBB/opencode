@@ -8,7 +8,7 @@ RPM packages for opencode on RHEL/UBI targets.
 The build host needs the following tools installed:
 
 - **bun** — installed at `$HOME/.bun/bin` (scripts export this onto PATH automatically)
-- **node / npm** — for bundling the opencode binary and LSP tools
+- **python3 + pip** — for vendoring the pure-Python python-lsp-server tree
 - **docker** — rpmbuild and all RPM/verify steps run inside UBI containers; host `rpmbuild` is NOT required
 - **curl** — used by vendor scripts to download upstream release archives
 - **tar** — used to extract downloaded archives
@@ -23,15 +23,15 @@ all RPM construction happens inside a `registry.access.redhat.com/ubi9/ubi:lates
 This runs the full pipeline in order:
 
 1. `build-binary.sh` — bundles the opencode CLI binary
-2. `build-tools.sh` — builds the Node.js tooling layer
+2. `build-tools.sh` — compiles the `oc-rebuild-config` config-merge tool
 3. `vendor-ripgrep.sh` — downloads and stages the ripgrep binary
-4. `vendor-pyright.sh` — vendors the pyright LSP server and its node_modules
+4. `vendor-pylsp.sh` — vendors python-lsp-server as a pure-Python `site/` tree (no node)
 5. `build-rpm.sh` — runs `rpmbuild` inside a UBI9 container, producing both RPMs
 
 Artifacts land in `packaging/rpm/out/`:
 
 - `opencode-<ver>-1.<dist>.x86_64.rpm` — core opencode package
-- `opencode-lsp-python-<ver>-1.<dist>.x86_64.rpm` — Python LSP (pyright) extension pack
+- `opencode-lsp-python-<ver>-1.<dist>.x86_64.rpm` — Python LSP (python-lsp-server) extension pack
 
 ## Verify offline (connected host, before shipping)
 
@@ -50,7 +50,7 @@ reproducible and not dependent on a remembered flag.
 ## Install (target, offline)
 
     sudo dnf install ./opencode-<ver>.x86_64.rpm
-    sudo dnf install ./opencode-lsp-python-<ver>.x86_64.rpm   # nodejs + python3 from internal mirror
+    sudo dnf install ./opencode-lsp-python-<ver>.x86_64.rpm   # requires python3 (>= 3.9) only — no nodejs
 
 Edit `/etc/opencode/ollama.conf` (host/port/model), then regenerate the runtime config:
 

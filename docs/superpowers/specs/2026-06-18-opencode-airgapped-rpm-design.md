@@ -155,8 +155,12 @@ Provider schema confermato: `provider.<id>.options.baseURL` + `apiKey` + `models
 
 ### 9.1 `opencode` (core) — v1
 Contenuto: binario (glibc baseline), `rg`, wrapper, `oc-rebuild-config`,
-`conf.d/00-base.json`, `ollama.conf`. Possiede le dir `/opt/opencode/{,bin,libexec}`.
-`%post`/`%postun`: esegue `oc-rebuild-config`. Nessuna dipendenza pesante.
+`conf.d/00-base.json`, `ollama.conf`, e un **Nerd Font** bundlato in
+`/usr/share/fonts/opencode-nerd/` (la TUI usa glifi icona Nerd Font; un terminale con
+font privo di quei glifi mostra caratteri corrotti). Possiede le dir
+`/opt/opencode/{,bin,libexec}`. `Requires: fontconfig`. `%post`: esegue `oc-rebuild-config`
++ `fc-cache`. L'utente deve selezionare il font ("DejaVuSansM Nerd Font Mono") nel proprio
+terminale una volta (opencode non può imporre il font dell'emulatore).
 
 ### 9.2 `opencode-lsp-python` — v1 (pilota)
 - **python-lsp-server (pylsp)** bundlato come albero **puro Python** in

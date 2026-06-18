@@ -16,4 +16,7 @@ test -x /opt/opencode/bin/pylsp
 # Ensure NO node runtime is required anywhere.
 if command -v node >/dev/null 2>&1; then echo "WARN: node present (not required)"; else echo "confirmed: no node on system"; fi
 /opt/opencode/bin/rg --version | head -1
+# Bundled Nerd Font present and registered with fontconfig (offline fc-cache in %post).
+test -n "$(ls /usr/share/fonts/opencode-nerd/*.ttf 2>/dev/null)"
+fc-list | grep -i "DejaVuSansM Nerd Font" | head -1
 echo "OFFLINE VERIFY OK"

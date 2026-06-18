@@ -297,11 +297,14 @@ ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 VER="15.1.0"
 PLAT="x86_64-unknown-linux-musl"
 ASSET="ripgrep-${VER}-${PLAT}.tar.gz"
+# Pinned SHA-256 of the upstream asset (bump VER and SHA256 together — never silently).
+SHA256="1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599"
 URL="https://github.com/BurntSushi/ripgrep/releases/download/${VER}/${ASSET}"
 DEST="$ROOT/packaging/rpm/payload/opencode/opt/opencode/bin"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 curl -fsSL "$URL" -o "$TMP/$ASSET"
+echo "${SHA256}  ${TMP}/${ASSET}" | sha256sum -c -   # abort on integrity mismatch
 tar -xzf "$TMP/$ASSET" -C "$TMP"
 mkdir -p "$DEST"
 cp "$TMP/ripgrep-${VER}-${PLAT}/rg" "$DEST/rg"
@@ -328,7 +331,7 @@ git commit -m "feat(packaging): vendor ripgrep 15.1.0 musl into core payload"
 
 **Files:**
 - Create: `packaging/rpm/opencode.spec`
-- Create: `packaging/rpm/payload/opencode/usr/bin/opencode` (wrapper)
+- Create: `packaging/rpm/files/opencode.wrapper` (wrapper SOURCE — tracked, lives OUTSIDE the git-ignored `payload/`; installed to `/usr/bin/opencode` by the spec)
 - Create: `packaging/rpm/config/00-base.json`
 - Create: `packaging/rpm/config/ollama.conf`
 - Create: `packaging/rpm/scripts/build-rpm.sh`
@@ -339,7 +342,7 @@ git commit -m "feat(packaging): vendor ripgrep 15.1.0 musl into core payload"
 
 - [ ] **Step 1: Write the wrapper**
 
-Create `packaging/rpm/payload/opencode/usr/bin/opencode`:
+Create `packaging/rpm/files/opencode.wrapper` (tracked source; the spec installs it to `/usr/bin/opencode`):
 
 ```sh
 #!/bin/sh
@@ -403,6 +406,7 @@ install time or runtime except to the configured Ollama endpoint.
 %install
 rm -rf %{buildroot}
 cp -a %{_sourcedir}/payload/opencode/. %{buildroot}/
+install -D -m 0755 %{_sourcedir}/files/opencode.wrapper %{buildroot}/usr/bin/opencode
 install -d %{buildroot}/etc/opencode/conf.d
 install -m 0644 %{_sourcedir}/config/00-base.json %{buildroot}/etc/opencode/conf.d/00-base.json
 install -m 0644 %{_sourcedir}/config/ollama.conf  %{buildroot}/etc/opencode/ollama.conf
@@ -437,7 +441,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 RPMDIR="$ROOT/packaging/rpm"
 VER="$(node -p "require('$ROOT/packages/opencode/package.json').version")"
-chmod 0755 "$RPMDIR/payload/opencode/usr/bin/opencode"
+chmod 0755 "$RPMDIR/files/opencode.wrapper"
 PYVER="$(cat "$RPMDIR/payload/opencode-lsp-python/opt/opencode/lsp/python/.pyright-version" 2>/dev/null || echo "")"
 mkdir -p "$RPMDIR/out"
 IMAGE="registry.access.redhat.com/ubi9/ubi:latest"
@@ -445,7 +449,7 @@ docker run --rm -v "$RPMDIR":/work -w /work -e VER="$VER" -e PYVER="$PYVER" "$IM
   set -euo pipefail
   rpmbuild --version >/dev/null 2>&1 || dnf -y install rpm-build >/dev/null
   TOP=/tmp/top; rm -rf $TOP; mkdir -p $TOP/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
-  cp -a /work/payload /work/config $TOP/SOURCES/
+  cp -a /work/payload /work/config /work/files $TOP/SOURCES/
   rpmbuild --define "_topdir $TOP" --define "ver $VER" --define "_sourcedir $TOP/SOURCES" -bb /work/opencode.spec
   if [ -n "$PYVER" ] && [ -d /work/payload/opencode-lsp-python ]; then
     rpmbuild --define "_topdir $TOP" --define "pyrightver $PYVER" --define "_sourcedir $TOP/SOURCES" -bb /work/opencode-lsp-python.spec
@@ -467,7 +471,7 @@ Expected: lists `/usr/bin/opencode`, `/opt/opencode/libexec/opencode`, `/opt/ope
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packaging/rpm/opencode.spec packaging/rpm/payload/opencode/usr/bin/opencode packaging/rpm/config packaging/rpm/scripts/build-rpm.sh
+git add packaging/rpm/opencode.spec packaging/rpm/files/opencode.wrapper packaging/rpm/config packaging/rpm/scripts/build-rpm.sh
 git commit -m "feat(packaging): core opencode RPM with offline wrapper and config merge"
 ```
 

@@ -1,3 +1,6 @@
+%global __os_install_post %{nil}
+%global debug_package %{nil}
+%global _build_id_links none
 Name:           opencode-lsp-python
 Version:        %{pyrightver}
 Release:        1%{?dist}
@@ -7,8 +10,6 @@ BuildArch:      x86_64
 Requires:       opencode
 Requires:       nodejs
 Requires:       python3
-%global __os_install_post %{nil}
-%global debug_package %{nil}
 
 %description
 Bundles pyright (Python language server) for air-gapped opencode and
@@ -25,6 +26,7 @@ install -d %{buildroot}/etc/opencode/conf.d
 install -m 0644 %{_sourcedir}/config/10-python.json %{buildroot}/etc/opencode/conf.d/10-python.json
 
 %files
+%dir /opt/opencode/lsp
 /opt/opencode/lsp/python
 /opt/opencode/bin/pyright-langserver
 %config(noreplace) /etc/opencode/conf.d/10-python.json

@@ -1,3 +1,6 @@
+%global __os_install_post %{nil}
+%global debug_package %{nil}
+%global _build_id_links none
 Name:           opencode
 Version:        %{ver}
 Release:        1%{?dist}
@@ -5,9 +8,6 @@ Summary:        opencode AI coding agent (air-gapped build)
 License:        MIT
 URL:            https://opencode.ai
 BuildArch:      x86_64
-Requires:       tar
-%global __os_install_post %{nil}
-%global debug_package %{nil}
 
 %description
 Air-gapped opencode for RHEL 8/9. Bundles a glibc baseline binary, ripgrep,
@@ -24,6 +24,8 @@ install -m 0644 %{_sourcedir}/config/ollama.conf  %{buildroot}/etc/opencode/olla
 
 %files
 %dir /opt/opencode
+%dir /opt/opencode/bin
+%dir /opt/opencode/libexec
 /opt/opencode/libexec/opencode
 /opt/opencode/libexec/oc-rebuild-config
 /opt/opencode/bin/rg

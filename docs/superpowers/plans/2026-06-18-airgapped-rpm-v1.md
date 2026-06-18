@@ -682,10 +682,11 @@ git commit -m "test(packaging): offline install verification on UBI8 and UBI9"
 
 **Files:**
 - Create: `packaging/rpm/scripts/build-all.sh`
+- Create: `packaging/rpm/test/run-verify.sh` (codifies the offline `--network=none` verification from Task 6)
 - Create: `packaging/rpm/README.md`
 
 **Interfaces:**
-- Produces: one-command build of all v1 artifacts on a connected host; staged `models.json` snapshot.
+- Produces: one-command build of all v1 artifacts on a connected host, and a one-command offline verification of the produced RPMs on UBI8 + UBI9.
 
 - [ ] **Step 1: Stage the models snapshot in build-all and chain every step**
 
@@ -710,6 +711,32 @@ echo "All RPMs in packaging/rpm/out/:"; ls -1 "$ROOT/packaging/rpm/out/"
 Run: `chmod +x packaging/rpm/scripts/build-all.sh && ./packaging/rpm/scripts/build-all.sh`
 Expected: `packaging/rpm/out/` contains `opencode-<ver>-1.*.x86_64.rpm` and `opencode-lsp-python-*.x86_64.rpm`.
 
+- [ ] **Step 2b: Codify the offline verification in a committed runner**
+
+Create `packaging/rpm/test/run-verify.sh` so the `--network=none` guarantee is reproducible (not a remembered flag):
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+RPMDIR="$ROOT/packaging/rpm"
+declare -A BASES=(
+  [ubi9]="registry.access.redhat.com/ubi9/ubi:latest"
+  [ubi8]="registry.access.redhat.com/ubi8/ubi:latest"
+)
+for tag in ubi9 ubi8; do
+  echo "=== building verifier image ($tag) ==="
+  docker build --build-arg BASE="${BASES[$tag]}" \
+    -f "$RPMDIR/test/Dockerfile.verify" -t "oc-verify:$tag" "$RPMDIR"
+  echo "=== running OFFLINE ($tag, --network=none) ==="
+  docker run --rm --network=none "oc-verify:$tag"
+done
+echo "ALL OFFLINE VERIFICATIONS PASSED"
+```
+
+Run: `chmod +x packaging/rpm/test/run-verify.sh && ./packaging/rpm/test/run-verify.sh`
+Expected: both bases print `OFFLINE VERIFY OK` and the script ends with `ALL OFFLINE VERIFICATIONS PASSED`.
+
 - [ ] **Step 3: Write the README**
 
 Create `packaging/rpm/README.md` documenting: prerequisites (connected build host with Bun, npm, rpmbuild, docker, curl); `build-all.sh`; how to set the Ollama endpoint on a target (`/etc/opencode/ollama.conf` + rerun `oc-rebuild-config`, or before install); how to add a future language pack (copy the python pattern: vendor script + spec + `NN-<lang>.json` fragment + `Requires`); the offline guarantees enforced by the wrapper.
@@ -721,9 +748,13 @@ Create `packaging/rpm/README.md` documenting: prerequisites (connected build hos
     ./packaging/rpm/scripts/build-all.sh
 Artifacts land in `packaging/rpm/out/`.
 
+## Verify offline (connected host, before shipping)
+    ./packaging/rpm/test/run-verify.sh
+Builds UBI8 + UBI9 verifier images and runs each with `--network=none`.
+
 ## Install (target, offline)
     sudo dnf install ./opencode-<ver>.x86_64.rpm
-    sudo dnf install ./opencode-lsp-python-<ver>.x86_64.rpm   # python3 from internal mirror
+    sudo dnf install ./opencode-lsp-python-<ver>.x86_64.rpm   # nodejs + python3 from internal mirror
 Edit `/etc/opencode/ollama.conf` (host/port/model), then:
     sudo /opt/opencode/libexec/oc-rebuild-config /etc/opencode/conf.d /etc/opencode/ollama.conf /etc/opencode/opencode.json
 
@@ -732,16 +763,18 @@ Replicate the Python pilot: a `vendor-<lang>.sh`, a `opencode-lsp-<lang>.spec`
 (with the right `Requires:`), and a `config/NN-<lang>.json` fragment. No core change.
 ```
 
+Prerequisites note for the README: the connected build host needs `bun` (at `$HOME/.bun/bin`), `node`/`npm`, `docker` (rpmbuild and all RPM/verify steps run inside UBI containers — host `rpmbuild` is NOT required), `curl`, and `tar`.
+
 - [ ] **Step 4: Verify README links match real paths**
 
-Run: `ls packaging/rpm/scripts/build-all.sh packaging/rpm/out/*.rpm`
+Run: `ls packaging/rpm/scripts/build-all.sh packaging/rpm/test/run-verify.sh packaging/rpm/out/*.rpm`
 Expected: all paths exist.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packaging/rpm/scripts/build-all.sh packaging/rpm/README.md
-git commit -m "feat(packaging): one-command build-all + air-gapped RPM docs"
+git add packaging/rpm/scripts/build-all.sh packaging/rpm/test/run-verify.sh packaging/rpm/README.md
+git commit -m "feat(packaging): one-command build-all, offline verify runner, and docs"
 ```
 
 ---

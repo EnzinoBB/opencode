@@ -66,7 +66,7 @@ Mappa completa (riferimenti in `packages/opencode/src` e `packages/core/src`):
 |---|---|---|
 | **ripgrep** | download da GitHub releases in `~/.opencode/bin/rg` | **bundlato** (`x86_64-unknown-linux-musl`) in `/opt/opencode/bin/rg`, su PATH |
 | **Language server** | download on-demand (GitHub/npm/`go install`/`gem`) | **bundlati** per linguaggio + `OPENCODE_DISABLE_LSP_DOWNLOAD=true` |
-| **models.dev** | fetch live ogni 60 min | snapshot embeddato + `OPENCODE_DISABLE_MODELS_FETCH=true` + `OPENCODE_MODELS_PATH` |
+| **models.dev** | fetch live ogni 60 min | snapshot embeddato nel binario + `OPENCODE_DISABLE_MODELS_FETCH=true` (nessun `models.json` spedito) |
 | **Auto-update** | check a ogni avvio | `OPENCODE_DISABLE_AUTOUPDATE=true` |
 | **Provider OAuth/auth** | phone-home all'auth di vari provider | provider non configurati + approccio soft (§7) |
 | **webfetch / websearch** | tool su richiesta dell'agente | nessun endpoint hardcoded; inerti senza rete |
@@ -79,9 +79,8 @@ così l'air-gap è garantito indipendentemente dalla config dell'utente.
 ## 5. Layout su filesystem (FHS)
 
 ```
-/opt/opencode/libexec/opencode          # binario reale (musl-baseline)
+/opt/opencode/libexec/opencode          # binario reale (glibc baseline)
 /opt/opencode/bin/rg                     # ripgrep bundlato
-/opt/opencode/share/models.json          # snapshot models.dev (per OPENCODE_MODELS_PATH)
 /opt/opencode/lsp/<lang>/...             # file dei language server, per linguaggio
 /opt/opencode/libexec/oc-rebuild-config  # script merge conf.d -> opencode.json
 /usr/bin/opencode                        # wrapper (entrypoint utente)
@@ -101,10 +100,18 @@ Imposta i flag offline e il PATH, poi fa `exec` del binario reale:
 export OPENCODE_DISABLE_LSP_DOWNLOAD=true
 export OPENCODE_DISABLE_AUTOUPDATE=true
 export OPENCODE_DISABLE_MODELS_FETCH=true
-export OPENCODE_MODELS_PATH=/opt/opencode/share/models.json
+export OPENCODE_DISABLE_SHARE=true       # zero-egress: niente session sharing anche con config utente
+export OPENCODE_PURE=1                    # niente plugin esterni (npm) caricati
 export PATH="/opt/opencode/bin:$PATH"   # rg + lsp bundlati risolti via which()
 exec /opt/opencode/libexec/opencode "$@"
 ```
+
+> **Nota (impl):** `OPENCODE_MODELS_PATH` NON viene impostato di proposito — con
+> `OPENCODE_DISABLE_MODELS_FETCH=true` e nessuna cache su disco, opencode usa lo snapshot
+> `OPENCODE_MODELS_DEV` embeddato nel binario; puntare a un `models.json` placeholder vuoto
+> verrebbe restituito tale e quale (zero modelli). I flag `OPENCODE_DISABLE_SHARE`/
+> `OPENCODE_PURE` sono hardening aggiunti in review finale per garantire zero-egress a
+> prescindere dalla config dell'utente.
 
 Razionale: centralizza l'air-gap e fa sì che gli LSP bundlati siano trovati via `which()`
 senza che opencode tenti alcun download.
@@ -147,8 +154,8 @@ Provider schema confermato: `provider.<id>.options.baseURL` + `apiKey` + `models
 ## 9. Pacchetti RPM
 
 ### 9.1 `opencode` (core) — v1
-Contenuto: binario, `rg`, `models.json`, wrapper, `oc-rebuild-config`,
-`conf.d/00-base.json`, `ollama.conf`.
+Contenuto: binario (glibc baseline), `rg`, wrapper, `oc-rebuild-config`,
+`conf.d/00-base.json`, `ollama.conf`. Possiede le dir `/opt/opencode/{,bin,libexec}`.
 `%post`/`%postun`: esegue `oc-rebuild-config`. Nessuna dipendenza pesante.
 
 ### 9.2 `opencode-lsp-python` — v1 (pilota)

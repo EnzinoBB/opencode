@@ -15,7 +15,7 @@
 - **No network access on target** at install-time or runtime. Anything opencode would download must be bundled.
 - ripgrep pinned to **15.1.0** (must match `packages/core/src/ripgrep/binary.ts`), asset `ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz`.
 - Runtime language deps (e.g. `python3`) are declared as RPM `Requires` → resolved from the internal RHEL mirror, never bundled in v1.
-- Offline env flags imposed by the wrapper: `OPENCODE_DISABLE_LSP_DOWNLOAD=true`, `OPENCODE_DISABLE_AUTOUPDATE=true`, `OPENCODE_DISABLE_MODELS_FETCH=true`, `OPENCODE_MODELS_PATH=/opt/opencode/share/models.json`, and `PATH` prefixed with `/opt/opencode/bin`.
+- Offline env flags imposed by the wrapper: `OPENCODE_DISABLE_LSP_DOWNLOAD=true`, `OPENCODE_DISABLE_AUTOUPDATE=true`, `OPENCODE_DISABLE_MODELS_FETCH=true`, and `PATH` prefixed with `/opt/opencode/bin`. **Do NOT set `OPENCODE_MODELS_PATH`**: with fetch disabled and no on-disk cache, opencode's `models-dev.ts` `populate()` falls back to the embedded `OPENCODE_MODELS_DEV` snapshot. Setting `OPENCODE_MODELS_PATH` to a placeholder `{}` file would be returned verbatim (it is truthy) and yield zero models — so we ship no `models.json` and leave the var unset.
 - FHS layout exactly as in the design spec §5.
 - Version string: read from `packages/opencode/package.json` (`version` field, currently `1.17.8`) and passed to `rpmbuild` via `--define "ver <version>"`.
 - All new packaging artifacts live under `packaging/rpm/`. Do not restructure existing build code beyond the minimal `--targets` filter in Task 1.
@@ -83,6 +83,7 @@ Create `packaging/rpm/scripts/build-binary.sh`:
 set -euo pipefail
 # Builds the single air-gapped target and stages it into the RPM payload.
 # Must run on a CONNECTED host (Bun downloads cross-compile artifacts here).
+export PATH="$HOME/.bun/bin:$PATH"   # bun is installed here, not on default PATH
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 TARGET="opencode-linux-x64-baseline-musl"
 cd "$ROOT/packages/opencode"
@@ -90,7 +91,7 @@ bun run script/build.ts --targets="$TARGET"
 BIN="$ROOT/packages/opencode/dist/$TARGET/bin/opencode"
 test -x "$BIN" || { echo "build failed: $BIN missing"; exit 1; }
 DEST="$ROOT/packaging/rpm/payload/opencode/opt/opencode"
-mkdir -p "$DEST/libexec" "$DEST/share"
+mkdir -p "$DEST/libexec"
 cp "$BIN" "$DEST/libexec/opencode"
 chmod 0755 "$DEST/libexec/opencode"
 echo "staged binary -> $DEST/libexec/opencode"
@@ -245,6 +246,7 @@ Create `packaging/rpm/scripts/build-tools.sh`:
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
+export PATH="$HOME/.bun/bin:$PATH"   # bun is installed here, not on default PATH
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 DEST="$ROOT/packaging/rpm/payload/opencode/opt/opencode/libexec"
 mkdir -p "$DEST"
@@ -346,7 +348,6 @@ Create `packaging/rpm/payload/opencode/usr/bin/opencode`:
 export OPENCODE_DISABLE_LSP_DOWNLOAD=true
 export OPENCODE_DISABLE_AUTOUPDATE=true
 export OPENCODE_DISABLE_MODELS_FETCH=true
-export OPENCODE_MODELS_PATH=/opt/opencode/share/models.json
 export PATH="/opt/opencode/bin:$PATH"
 exec /opt/opencode/libexec/opencode "$@"
 ```
@@ -411,7 +412,6 @@ install -m 0644 %{_sourcedir}/config/ollama.conf  %{buildroot}/etc/opencode/olla
 /opt/opencode/libexec/opencode
 /opt/opencode/libexec/oc-rebuild-config
 /opt/opencode/bin/rg
-/opt/opencode/share
 /usr/bin/opencode
 %dir /etc/opencode
 %dir /etc/opencode/conf.d
@@ -425,31 +425,33 @@ install -m 0644 %{_sourcedir}/config/ollama.conf  %{buildroot}/etc/opencode/olla
 if [ "$1" = 0 ]; then rm -f /etc/opencode/opencode.json; fi
 ```
 
-Note: `models.json` is staged into `/opt/opencode/share` by Task 7 (build-all). For a core-only build, create it empty so `%files` is satisfied — handled in build-rpm.sh below.
+Note: no `models.json` is shipped — the binary carries the embedded `OPENCODE_MODELS_DEV` snapshot and the wrapper sets `OPENCODE_DISABLE_MODELS_FETCH=true` (see Global Constraints).
 
 - [ ] **Step 4: Write the RPM build script**
 
-Create `packaging/rpm/scripts/build-rpm.sh`:
+Create `packaging/rpm/scripts/build-rpm.sh`. `rpmbuild` runs inside a UBI9 container (see Environment adaptations). It builds the core RPM always, and the Python sub-RPM when its payload is present (so Task 5 needs no further edit here):
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 RPMDIR="$ROOT/packaging/rpm"
-VER="$(node -p "require('$ROOT/packages/opencode/package.json').version" 2>/dev/null || \
-       grep -m1 '"version"' "$ROOT/packages/opencode/package.json" | sed -E 's/.*"version": *"([^"]+)".*/\1/')"
-# ensure models snapshot exists (placeholder if build-all didn't stage one)
-SHARE="$RPMDIR/payload/opencode/opt/opencode/share"
-mkdir -p "$SHARE"; [ -f "$SHARE/models.json" ] || echo '{}' > "$SHARE/models.json"
-# wrapper perms
+VER="$(node -p "require('$ROOT/packages/opencode/package.json').version")"
 chmod 0755 "$RPMDIR/payload/opencode/usr/bin/opencode"
-TOP="$(mktemp -d)"
-mkdir -p "$TOP"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
-cp -a "$RPMDIR/payload" "$RPMDIR/config" "$TOP/SOURCES/"
-rpmbuild --define "_topdir $TOP" --define "ver $VER" \
-  --define "_sourcedir $TOP/SOURCES" -bb "$RPMDIR/opencode.spec"
-mkdir -p "$RPMDIR/out"; cp "$TOP"/RPMS/x86_64/opencode-*.rpm "$RPMDIR/out/"
-rm -rf "$TOP"
+PYVER="$(cat "$RPMDIR/payload/opencode-lsp-python/opt/opencode/lsp/python/.pyright-version" 2>/dev/null || echo "")"
+mkdir -p "$RPMDIR/out"
+IMAGE="registry.access.redhat.com/ubi9/ubi:latest"
+docker run --rm -v "$RPMDIR":/work -w /work -e VER="$VER" -e PYVER="$PYVER" "$IMAGE" bash -c '
+  set -euo pipefail
+  rpmbuild --version >/dev/null 2>&1 || dnf -y install rpm-build >/dev/null
+  TOP=/tmp/top; rm -rf $TOP; mkdir -p $TOP/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+  cp -a /work/payload /work/config $TOP/SOURCES/
+  rpmbuild --define "_topdir $TOP" --define "ver $VER" --define "_sourcedir $TOP/SOURCES" -bb /work/opencode.spec
+  if [ -n "$PYVER" ] && [ -d /work/payload/opencode-lsp-python ]; then
+    rpmbuild --define "_topdir $TOP" --define "pyrightver $PYVER" --define "_sourcedir $TOP/SOURCES" -bb /work/opencode-lsp-python.spec
+  fi
+  cp $TOP/RPMS/x86_64/*.rpm /work/out/
+'
 ls -1 "$RPMDIR/out/"
 ```
 
@@ -566,20 +568,9 @@ if [ "$1" = 0 ]; then
 fi
 ```
 
-- [ ] **Step 5: Extend build-rpm.sh to build the sub-RPM**
+- [ ] **Step 5: (no edit needed) build-rpm.sh already builds the sub-RPM**
 
-In `packaging/rpm/scripts/build-rpm.sh`, before the final `ls`, add (uses the pinned pyright version for `pyrightver`):
-
-```bash
-PYVER="$(cat "$RPMDIR/payload/opencode-lsp-python/opt/opencode/lsp/python/.pyright-version" 2>/dev/null || echo 0.0.0)"
-if [ -d "$RPMDIR/payload/opencode-lsp-python" ]; then
-  rpmbuild --define "_topdir $TOP" --define "pyrightver $PYVER" \
-    --define "_sourcedir $TOP/SOURCES" -bb "$RPMDIR/opencode-lsp-python.spec"
-  cp "$TOP"/RPMS/x86_64/opencode-lsp-python-*.rpm "$RPMDIR/out/" 2>/dev/null || true
-fi
-```
-
-(Note: this block must run while `$TOP` still exists — move the `rm -rf "$TOP"` and `ls` to after it. Re-copy `payload`/`config` into `$TOP/SOURCES` already covers the new payload dir.)
+`build-rpm.sh` (Task 4) detects `payload/opencode-lsp-python/.../.pyright-version` and builds `opencode-lsp-python.spec` automatically when the payload is present. Confirm the spec filename matches what `build-rpm.sh` expects (`/work/opencode-lsp-python.spec`). No change to `build-rpm.sh` required for this task.
 
 - [ ] **Step 6: Build both RPMs and inspect the sub-RPM**
 
@@ -697,20 +688,14 @@ Create `packaging/rpm/scripts/build-all.sh`:
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
+export PATH="$HOME/.bun/bin:$PATH"   # bun is installed here, not on default PATH
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 D="$ROOT/packaging/rpm/scripts"
 "$D/build-binary.sh"
 "$D/build-tools.sh"
 "$D/vendor-ripgrep.sh"
 "$D/vendor-pyright.sh"
-# Stage the embedded models snapshot for OPENCODE_MODELS_PATH:
-SHARE="$ROOT/packaging/rpm/payload/opencode/opt/opencode/share"
-mkdir -p "$SHARE"
-node -e "const g=require('$ROOT/packages/opencode/script/generate.ts');" 2>/dev/null || true
-# Fallback: emit an empty object if no snapshot is produced; the binary also
-# carries OPENCODE_MODELS_DEV embedded, so this file is a safety net.
-[ -f "$SHARE/models.json" ] || echo '{}' > "$SHARE/models.json"
-"$D/build-rpm.sh"
+"$D/build-rpm.sh"   # runs rpmbuild inside a UBI9 container; builds core + python
 echo "All RPMs in packaging/rpm/out/:"; ls -1 "$ROOT/packaging/rpm/out/"
 ```
 
@@ -761,3 +746,8 @@ git commit -m "feat(packaging): one-command build-all + air-gapped RPM docs"
 - Native unit tests exist only where there is real logic (Task 2). Packaging tasks are verified by inspecting RPM contents (`rpm -qlp`) and the offline container run (Task 6) — those are the gates.
 - Do not commit the `packaging/rpm/payload/` or `out/` trees (git-ignored in Task 3); they are regenerated by `build-all.sh`.
 - If `rpmbuild` is unavailable on the build host, install it (`dnf install rpm-build` / `apt install rpmbuild`); it is a build-host tool only, never required on targets.
+
+## Environment adaptations (this build host)
+
+- **`bun` is installed at `$HOME/.bun/bin` and is NOT on the default/login PATH.** Every command that uses `bun` (Tasks 1, 2, and `vendor`/build scripts) must prepend it: start the relevant shell commands with `export PATH="$HOME/.bun/bin:$PATH"`. The orchestration scripts (`build-binary.sh`, `build-tools.sh`, `build-all.sh`) must include this export near the top.
+- **No passwordless `sudo`, so host `rpmbuild` cannot be apt-installed.** `rpmbuild` runs **inside a `registry.access.redhat.com/ubi9/ubi:latest` container** (docker is available; UBI9 provides `rpm-build`). `build-rpm.sh` is dockerized accordingly (Task 4 Step 4). This also makes RPM metadata (`%{?dist}`, rpm version) RHEL-native.

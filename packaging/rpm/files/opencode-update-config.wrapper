@@ -1,0 +1,23 @@
+#!/bin/sh
+# opencode-update-config: regenerate /etc/opencode/opencode.json from the drop-in fragments.
+#
+# Auto-discovers everything under /etc/opencode (override the base dir with
+# OPENCODE_ETC): it merges ALL *.json in <etc>/conf.d (in lexical order),
+# substitutes the OLLAMA_HOST/OLLAMA_PORT/MODEL_ID values from <etc>/ollama.conf,
+# and writes <etc>/opencode.json. Run it (as root) after editing ollama.conf or
+# after adding/removing a fragment in conf.d.
+#
+# Usage:
+#   sudo opencode-update-config              # regenerate with defaults (/etc/opencode)
+#   OPENCODE_ETC=/path opencode-update-config
+set -eu
+ETC="${OPENCODE_ETC:-/etc/opencode}"
+CONFD="$ETC/conf.d"
+OLLAMA_CONF="$ETC/ollama.conf"
+OUT="$ETC/opencode.json"
+
+if [ ! -d "$CONFD" ]; then
+  echo "opencode-update-config: no fragment directory at $CONFD" >&2
+  exit 1
+fi
+exec /opt/opencode/libexec/oc-rebuild-config "$CONFD" "$OLLAMA_CONF" "$OUT"

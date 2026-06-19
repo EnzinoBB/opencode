@@ -5,6 +5,10 @@ set -euo pipefail
 rpm -i --nodeps /rpms/opencode-[0-9]*.rpm
 rpm -i --nodeps /rpms/opencode-lsp-python-*.rpm
 test -f /etc/opencode/opencode.json
+# The opencode-update-config wrapper regenerates the config (auto-discovers /etc/opencode).
+command -v opencode-update-config
+opencode-update-config
+test -f /etc/opencode/opencode.json
 echo "=== generated config ==="; cat /etc/opencode/opencode.json
 command -v opencode
 opencode --version

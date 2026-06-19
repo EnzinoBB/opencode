@@ -55,10 +55,14 @@ reproducible and not dependent on a remembered flag.
 
 Edit `/etc/opencode/ollama.conf` (host/port/model), then regenerate the runtime config:
 
-    sudo /opt/opencode/libexec/oc-rebuild-config /etc/opencode/conf.d /etc/opencode/ollama.conf /etc/opencode/opencode.json
+    sudo opencode-update-config
 
-The `oc-rebuild-config` helper merges the config fragments in `/etc/opencode/conf.d/`
-with the Ollama endpoint settings and writes `/etc/opencode/opencode.json`.
+`opencode-update-config` auto-discovers everything under `/etc/opencode`: it merges all
+`*.json` fragments in `/etc/opencode/conf.d/` with the Ollama endpoint settings from
+`ollama.conf` and writes `/etc/opencode/opencode.json`. (It is a thin wrapper over
+`/opt/opencode/libexec/oc-rebuild-config`; the base dir can be overridden with
+`OPENCODE_ETC`.) The RPM `%post` runs the same regeneration automatically on
+install/upgrade — run the command by hand only after editing `ollama.conf` or a fragment.
 
 ### Terminal font (TUI icons)
 

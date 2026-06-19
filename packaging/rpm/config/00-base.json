@@ -1,5 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "model": "ollama/MODEL_ID",
   "provider": {
     "ollama": {
       "name": "Ollama (LAN)",
